@@ -1,5 +1,3 @@
-use rand::prelude::*;
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum BoardType {
     Wall,
@@ -120,6 +118,7 @@ struct Mino {
 
 impl Mino {
     fn random() -> Self {
+        use rand::prelude::*;
         let type_ = match rand::thread_rng().gen_range(0, 7) {
             0 => MinoType::I,
             1 => MinoType::O,
@@ -161,9 +160,7 @@ fn move_cursor(x: u8, y: u8) {
     print!("\x1b[{};{}H", x, y);
 }
 
-fn input_command() -> Option<MoveCommand> {
-    let mut line = String::new();
-    std::io::stdin().read_line(&mut line).ok();
+fn str_to_command(line: String) -> Option<MoveCommand> {
     match line.trim() {
         "a" => Some(MoveCommand::Left),
         "d" => Some(MoveCommand::Right),
@@ -173,8 +170,22 @@ fn input_command() -> Option<MoveCommand> {
     }
 }
 
-fn main() {
-    clear_screen();
+#[tokio::main]
+async fn main() {
+    use futures::{FutureExt, StreamExt}; // fuse(), next()
+    use tokio::io::AsyncBufReadExt;
+
+    let down_timer = async_stream::stream! {
+        loop {
+            let delay = futures_timer::Delay::new(std::time::Duration::from_secs(1));
+            delay.await;
+            yield ();
+        }
+    };
+
+    tokio::pin!(down_timer);
+
+    let mut lines_from_stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
 
     let mut mino = Mino::random();
     let board = Board::<{10+2}, {20+1}>::new();
@@ -184,8 +195,15 @@ fn main() {
             clear_screen();
             new_board.show();
         }
-        if let Some(command) = input_command() {
-            mino = mino.moved(command);
+        tokio::select! {
+            Ok(Some(line)) = lines_from_stdin.next_line().fuse() => {
+                if let Some(command) = str_to_command(line) {
+                    mino = mino.moved(command);
+                }
+            }
+            _ = down_timer.next() => {
+                mino = mino.moved(MoveCommand::Down);
+            }
         }
     }
 }
