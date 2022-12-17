@@ -164,8 +164,8 @@ fn str_to_command(line: String) -> Option<MoveCommand> {
     match line.trim() {
         "a" => Some(MoveCommand::Left),
         "d" => Some(MoveCommand::Right),
-        "s" => Some(MoveCommand::Down),
-        "x" => Some(MoveCommand::Rotate),
+        "s" => Some(MoveCommand::Rotate),
+        ""  => Some(MoveCommand::Down),
         _   => None,
     }
 }
@@ -188,23 +188,35 @@ async fn main() {
     let mut lines_from_stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
 
     let mut mino = Mino::random();
-    let board = Board::<{10+2}, {20+1}>::new();
+    let mut board = Board::<{10+2}, {20+1}>::new();
 
     loop {
         if let Some(new_board) = board.put_mino(&mino) {
             clear_screen();
             new_board.show();
+        } else {
+            break;
         }
         tokio::select! {
             Ok(Some(line)) = lines_from_stdin.next_line().fuse() => {
                 if let Some(command) = str_to_command(line) {
-                    mino = mino.moved(command);
+                    let tmp_mino = mino.moved(command);
+                    if board.put_mino(&tmp_mino).is_some() {
+                        mino = tmp_mino;
+                    }
                 }
             }
             _ = down_timer.next() => {
-                mino = mino.moved(MoveCommand::Down);
+                let tmp_mino = mino.moved(MoveCommand::Down);
+                if board.put_mino(&tmp_mino).is_some() {
+                    mino = tmp_mino;
+                } else {
+                    board = board.put_mino(&mino).unwrap();
+                    mino = Mino::random();
+                }
             }
         }
     }
+    println!("GameOver");
 }
 
