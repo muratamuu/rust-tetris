@@ -6,29 +6,30 @@ enum BoardType {
 }
 
 #[derive(Debug, Clone)]
-struct Board<const X: usize, const Y: usize> {
-    board: [[BoardType; X]; Y],
+struct Board {
+    board: Vec<Vec<BoardType>>,
 }
 
-impl<const X: usize, const Y: usize> Board<X, Y> {
-    fn new() -> Self {
-        let mut board = Self {
-            board: [[BoardType::Empty; X]; Y],
-        };
+impl Board {
+    fn new(x: usize, y: usize) -> Self {
+        let width  = x + 2;
+        let height = y + 1;
+        let mut board = Self { board: vec![vec![BoardType::Empty; width]; height] };
 
-        for y in 0..Y {
-            board.board[y][0] = BoardType::Wall;
-            board.board[y][X - 1] = BoardType::Wall;
+        for y in 0..height {
+            board.board[y][0]         = BoardType::Wall;
+            board.board[y][width - 1] = BoardType::Wall;
         }
-        for x in 0..X {
-            board.board[Y - 1][x] = BoardType::Wall;
+
+        for x in 0..width {
+            board.board[height - 1][x] = BoardType::Wall;
         }
 
         board
     }
 
     fn show(&self) {
-        for line in self.board {
+        for line in &self.board {
             for block in line {
                 match block {
                     BoardType::Wall => print!("@"),
@@ -41,9 +42,11 @@ impl<const X: usize, const Y: usize> Board<X, Y> {
     }
 
     fn put_mino(&self, mino: &Mino) -> Option<Self> {
+        let width  = self.board[0].len();
+        let height = self.board.len();
         let mut new_board = self.clone();
         for (x, y) in mino.positions() {
-            if x < 0 || x >= X as i8 || y < 0 || y >= Y as i8 {
+            if x < 0 || x >= width as i8 || y < 0 || y >= height as i8 {
                 return None
             }
             if new_board.board[y as usize][x as usize] != BoardType::Empty {
@@ -53,6 +56,73 @@ impl<const X: usize, const Y: usize> Board<X, Y> {
         }
         Some(new_board)
     }
+
+    fn erase_fill_lines(&mut self) {
+        let mut board = self.board
+            .clone()
+            .into_iter()
+            .filter(|line|
+                !line[1..line.len()-1]
+                    .iter()
+                    .all(|&c| c == BoardType::Block))
+            .collect::<Vec<Vec<BoardType>>>();
+
+        let erased_count = self.board.len() - board.len();
+        let width = self.board[0].len();
+        let mut empty_line = vec![BoardType::Empty; width];
+        empty_line[0] = BoardType::Wall;
+        empty_line[width - 1] = BoardType::Wall;
+        for _ in 0..erased_count {
+            board.insert(0, empty_line.clone());
+        }
+
+        self.board = board;
+    }
+}
+
+#[test]
+fn test_board_initial_len() {
+    let board = Board2::new(10, 20);
+    assert_eq!(board.board.len(), 21);
+    assert_eq!(board.board[0].len(), 12);
+}
+
+#[test]
+fn test_board_initial_content() {
+    let board = Board2::new(10, 20);
+    assert_eq!(board.board[0][0], BoardType::Wall);
+    assert_eq!(board.board[0][1], BoardType::Empty);
+    assert_eq!(board.board[0][11], BoardType::Wall);
+    assert_eq!(board.board[20][0], BoardType::Wall);
+    assert_eq!(board.board[20][1], BoardType::Wall);
+    assert_eq!(board.board[20][11], BoardType::Wall);
+}
+
+#[test]
+fn test_board_put_mino() {
+    let mut board = Board2::new(10, 20);
+    let mino = Mino { type_: MinoType::I, pos: (1, 1), rotation: 0 };
+    board = board.put_mino(&mino).unwrap();
+    assert_eq!(board.board[0][1], BoardType::Block);
+    assert_eq!(board.board[1][1], BoardType::Block);
+    assert_eq!(board.board[2][1], BoardType::Block);
+    assert_eq!(board.board[3][1], BoardType::Block);
+}
+
+#[test]
+fn test_board_eralse_fill_lines() {
+    let mut board = Board2::new(4, 4);
+
+    let mino = Mino { type_: MinoType::I, pos: (2, 3), rotation: 1 };
+    board = board.put_mino(&mino).unwrap();
+
+    board.erase_fill_lines();
+    assert_eq!(board.board[3][0], BoardType::Wall);
+    assert_eq!(board.board[3][1], BoardType::Empty);
+    assert_eq!(board.board[3][2], BoardType::Empty);
+    assert_eq!(board.board[3][3], BoardType::Empty);
+    assert_eq!(board.board[3][4], BoardType::Empty);
+    assert_eq!(board.board[3][5], BoardType::Wall);
 }
 
 type Pos = (i8, i8);
@@ -188,7 +258,7 @@ async fn main() {
     let mut lines_from_stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
 
     let mut mino = Mino::random();
-    let mut board = Board::<{10+2}, {20+1}>::new();
+    let mut board = Board::new(10, 20);
 
     loop {
         if let Some(new_board) = board.put_mino(&mino) {
@@ -212,6 +282,7 @@ async fn main() {
                     mino = tmp_mino;
                 } else {
                     board = board.put_mino(&mino).unwrap();
+                    board.erase_fill_lines();
                     mino = Mino::random();
                 }
             }
